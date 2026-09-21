@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add Audacity labels to a WAV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f2f4f5;
+    --panel: #ffffff;
+    --ink: #16202a;
+    --muted: #5b6875;
+    --line: #d5dbe0;
+    --accent: #2f5bff;
+    --accent-tint: rgba(47, 91, 255, 0.08);
+    --danger: #c2261f;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12181e;
+      --panel: #1a222a;
+      --ink: #e8edf1;
+      --muted: #93a0ac;
+      --line: #2c3742;
+      --accent: #7c96ff;
+      --accent-tint: rgba(124, 150, 255, 0.12);
+      --danger: #ff8078;
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    color: var(--ink);
+    background: var(--bg);
+    font-family: "Bricolage Grotesque", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 1rem;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+  }
+  main {
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 3rem 1.25rem 4rem;
+  }
+
+  h1 {
+    margin: 0 0 0.75rem;
+    font-size: clamp(2rem, 6.5vw, 3.25rem);
+    font-weight: 800;
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+  }
+  .lede {
+    margin: 0 0 2rem;
+    max-width: 34rem;
+    color: var(--muted);
+    font-size: 1.0625rem;
+  }
+
+  .zones {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.875rem;
+  }
+  @media (max-width: 34rem) { .zones { grid-template-columns: 1fr; } }
+
+  .zone {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-height: 7.5rem;
+    padding: 1rem 1.1rem;
+    background: var(--panel);
+    border: 1.5px dashed var(--line);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color 0.15s, background-color 0.15s;
+  }
+  .zone:hover { border-color: var(--muted); }
+  .zone:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .zone.dragover { border-color: var(--accent); background: var(--accent-tint); }
+  .zone.filled { border-style: solid; border-color: var(--ink); }
+  .zone.error { border-style: solid; border-color: var(--danger); }
+  .zone input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .zone .kind { font-weight: 600; }
+  .zone .name { color: var(--muted); overflow-wrap: anywhere; }
+  .zone.filled .name { color: var(--ink); }
+  .zone .meta { margin-top: auto; padding-top: 0.5rem; color: var(--muted); font-size: 0.9375rem; }
+  .zone.error .meta { color: var(--danger); }
+
+  #preview { margin-top: 2.25rem; }
+  .track {
+    position: relative;
+    height: 3.5rem;
+    background-color: var(--panel);
+    background-image: linear-gradient(to right, var(--line) 1px, transparent 1px);
+    background-size: 10% 100%;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .mark {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--accent);
+  }
+  .mark::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -3px;
+    width: 8px;
+    height: 8px;
+    background: var(--accent);
+    border-radius: 0 0 3px 3px;
+  }
+  .mark.on { box-shadow: 0 0 0 3px var(--accent-tint); width: 3px; margin-left: -1.5px; }
+  .scale {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.375rem;
+    color: var(--muted);
+    font-size: 0.875rem;
+  }
+
+  .list {
+    margin: 1.25rem 0 0;
+    padding: 0;
+    list-style: none;
+    max-height: 16rem;
+    overflow-y: auto;
+    border-top: 1px solid var(--line);
+  }
+  .list li {
+    display: grid;
+    grid-template-columns: 7.5rem 1fr;
+    gap: 0.75rem;
+    padding: 0.5rem 0.25rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .list li:hover { background: var(--accent-tint); }
+  .list time { color: var(--muted); }
+  .list span { overflow-wrap: anywhere; }
+
+  .notes { margin: 0.75rem 0 0; color: var(--muted); font-size: 0.9375rem; }
+  .notes:empty { display: none; }
+
+  .actions { margin-top: 1.75rem; }
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: 0.8rem 1.5rem;
+    color: var(--bg);
+    background: var(--ink);
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: var(--accent); color: #fff; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  #status { min-height: 1.5rem; margin: 0.875rem 0 0; color: var(--muted); }
+  #status.bad { color: var(--danger); }
+
+  footer { margin-top: 3rem; color: var(--muted); font-size: 0.9375rem; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .zone { transition: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Add Audacity labels to a WAV</h1>
+  <p class="lede">Choose your exported WAV and the labels .txt from Audacity. You get the WAV back with each label as a marker.</p>
+
+  <div class="zones">
+    <label class="zone" id="zoneWav" data-default="Drop the file here or click to choose">
+      <input type="file" id="fileWav" accept=".wav,audio/wav,audio/x-wav">
+      <span class="kind">WAV audio</span>
+      <span class="name">Drop the file here or click to choose</span>
+      <span class="meta"></span>
+    </label>
+    <label class="zone" id="zoneTxt" data-default="Drop the file here or click to choose">
+      <input type="file" id="fileTxt" accept=".txt,text/plain">
+      <span class="kind">Labels (.txt)</span>
+      <span class="name">Drop the file here or click to choose</span>
+      <span class="meta"></span>
+    </label>
+  </div>
+
+  <section id="preview" hidden aria-label="Marker preview">
+    <div class="track" id="track"></div>
+    <div class="scale"><span>0:00</span><span id="endTime"></span></div>
+    <ul class="list" id="list"></ul>
+    <p class="notes" id="notes"></p>
+  </section>
+
+  <div class="actions">
+    <button type="button" id="go" disabled>Download marked WAV</button>
+    <p id="status" role="status" aria-live="polite"></p>
+  </div>
+
+  <footer>Nothing is uploaded. The files are combined inside this browser tab.</footer>
+</main>
+
+<noscript><p style="padding:1rem">This page needs JavaScript to combine the files.</p></noscript>
+
+<script>
+// ---- core (no DOM access) ----
+const ascii = s => Uint8Array.from(s, c => c.charCodeAt(0));
+const tag = (dv, o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3));
+
+function concat(parts) {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
+}
+
+function makeChunk(id, body) {
+  const pad = body.length & 1;
+  const out = new Uint8Array(8 + body.length + pad);
+  out.set(ascii(id), 0);
+  new DataView(out.buffer).setUint32(4, body.length, true);
+  out.set(body, 8);
+  return out;
+}
+
+async function parseWav(file) {
+  const notWav = "That doesn't look like a WAV file.";
+  if (file.size < 12) throw new Error(notWav);
+  const head = new DataView(await file.slice(0, 12).arrayBuffer());
+  if (tag(head, 0) !== 'RIFF' || tag(head, 8) !== 'WAVE') throw new Error(notWav);
+
+  const chunks = [];
+  let pos = 12, rate = 0, byteRate = 0, dataSize = 0;
+  while (pos + 8 <= file.size) {
+    const h = new DataView(await file.slice(pos, pos + 8).arrayBuffer());
+    const id = tag(h, 0), size = h.getUint32(4, true);
+    if (pos + 8 + size > file.size) throw new Error('This WAV file looks cut off or damaged.');
+    let kind = 'keep';
+    if (id === 'fmt ' && size >= 16) {
+      const f = new DataView(await file.slice(pos + 8, pos + 24).arrayBuffer());
+      rate = f.getUint32(4, true);
+      byteRate = f.getUint32(8, true);
+    } else if (id === 'data') {
+      dataSize = size;
+    } else if (id === 'cue ') {
+      kind = 'drop'; // replaced by the new markers
+    } else if (id === 'LIST' && size >= 4) {
+      const t = new DataView(await file.slice(pos + 8, pos + 12).arrayBuffer());
+      if (tag(t, 0) === 'adtl') kind = 'drop';
+    }
+    chunks.push({ id, pos, size, kind });
+    pos += 8 + size + (size & 1);
+  }
+  if (!rate || !byteRate) throw new Error('This WAV file has no audio format information.');
+  return { file, chunks, rate, duration: dataSize / byteRate };
+}
+
+function parseLabels(text) {
+  const out = [];
+  for (const line of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+    if (!line.trim() || line.startsWith('\\')) continue; // blank or frequency-range line
+    const [s, e, ...rest] = line.split('\t');
+    const start = parseFloat(String(s).replace(',', '.'));
+    const end = parseFloat(String(e).replace(',', '.'));
+    if (!Number.isFinite(start) || rest.length === 0) continue;
+    out.push({ start, end: Number.isFinite(end) ? end : start, text: rest.join('\t').trim() });
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
+
+function buildWav(wav, labels) {
+  const marks = labels.filter(l => l.start <= wav.duration);
+  const enc = new TextEncoder();
+
+  const cueBody = new Uint8Array(4 + 24 * marks.length);
+  const cv = new DataView(cueBody.buffer);
+  cv.setUint32(0, marks.length, true);
+  const adtl = [ascii('adtl')];
+
+  marks.forEach((m, i) => {
+    const id = i + 1;
+    const sample = Math.round(m.start * wav.rate);
+    const o = 4 + 24 * i;
+    cv.setUint32(o, id, true);
+    cv.setUint32(o + 4, sample, true);
+    cueBody.set(ascii('data'), o + 8);
+    cv.setUint32(o + 12, 0, true);
+    cv.setUint32(o + 16, 0, true);
+    cv.setUint32(o + 20, sample, true);
+
+    const text = enc.encode(m.text);
+    const len = 4 + text.length + 1;
+    const sub = new Uint8Array(8 + len + (len & 1));
+    sub.set(ascii('labl'), 0);
+    new DataView(sub.buffer).setUint32(4, len, true);
+    new DataView(sub.buffer).setUint32(8, id, true);
+    sub.set(text, 12);
+    adtl.push(sub);
+  });
+
+  const cueChunk = makeChunk('cue ', cueBody);
+  const listChunk = makeChunk('LIST', concat(adtl));
+
+  // Keep the original audio and other chunks as file slices, so a big
+  // recording is never copied into memory.
+  const parts = [];
+  let total = 4; // the "WAVE" tag
+  for (const c of wav.chunks) {
+    if (c.kind === 'drop') continue;
+    parts.push(wav.file.slice(c.pos, c.pos + 8 + c.size));
+    total += 8 + c.size;
+    if (c.size & 1) { parts.push(new Uint8Array(1)); total += 1; }
+  }
+  parts.push(cueChunk, listChunk);
+  total += cueChunk.length + listChunk.length;
+  if (total > 0xFFFFFFFF) throw new Error("The result would be over 4 GB, which is more than a WAV file can hold.");
+
+  const head = new Uint8Array(12);
+  head.set(ascii('RIFF'), 0);
+  new DataView(head.buffer).setUint32(4, total, true);
+  head.set(ascii('WAVE'), 8);
+
+  return { blob: new Blob([head, ...parts], { type: 'audio/wav' }), count: marks.length };
+}
+
+function fmt(t, short) {
+  const ms = Math.round(t * 1000);
+  const h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60;
+  const s = Math.floor(ms / 1000) % 60, r = ms % 1000;
+  const mm = h ? String(m).padStart(2, '0') : String(m);
+  return (h ? h + ':' : '') + mm + ':' + String(s).padStart(2, '0') + (short ? '' : '.' + String(r).padStart(3, '0'));
+}
+// ---- end core ----
+
+// ---- UI ----
+const $ = s => document.querySelector(s);
+const state = { wav: null, labels: null };
+
+function setZone(zone, { name, meta, status }) {
+  zone.classList.toggle('filled', status === 'ok');
+  zone.classList.toggle('error', status === 'error');
+  zone.querySelector('.name').textContent = name || zone.dataset.default;
+  zone.querySelector('.meta').textContent = meta || '';
+}
+
+function setStatus(msg, bad) {
+  const el = $('#status');
+  el.textContent = msg || '';
+  el.classList.toggle('bad', !!bad);
+}
+
+async function handleWav(file) {
+  setStatus('');
+  try {
+    state.wav = await parseWav(file);
+    setZone($('#zoneWav'), {
+      name: file.name,
+      meta: `${(state.wav.rate / 1000).toString()} kHz, ${fmt(state.wav.duration, true)} long`,
+      status: 'ok'
+    });
+  } catch (e) {
+    state.wav = null;
+    setZone($('#zoneWav'), { name: file.name, meta: e.message, status: 'error' });
+  }
+  refresh();
+}
+
+async function handleTxt(file) {
+  setStatus('');
+  try {
+    const labels = parseLabels(await file.text());
+    if (!labels.length) throw new Error('No labels found. Use File > Export > Export Labels in Audacity.');
+    state.labels = labels;
+    setZone($('#zoneTxt'), {
+      name: file.name,
+      meta: `${labels.length} ${labels.length === 1 ? 'label' : 'labels'}`,
+      status: 'ok'
+    });
+  } catch (e) {
+    state.labels = null;
+    setZone($('#zoneTxt'), { name: file.name, meta: e.message, status: 'error' });
+  }
+  refresh();
+}
+
+function wire(zone, input, handler) {
+  input.addEventListener('change', () => { if (input.files[0]) handler(input.files[0]); });
+  ['dragenter', 'dragover'].forEach(ev => zone.addEventListener(ev, e => {
+    e.preventDefault();
+    zone.classList.add('dragover');
+  }));
+  ['dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, e => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+  }));
+  zone.addEventListener('drop', e => {
+    const f = e.dataTransfer.files[0];
+    if (f) handler(f);
+  });
+}
+
+// A file dropped outside a zone shouldn't make the browser open it
+['dragover', 'drop'].forEach(ev => window.addEventListener(ev, e => e.preventDefault()));
+
+wire($('#zoneWav'), $('#fileWav'), handleWav);
+wire($('#zoneTxt'), $('#fileTxt'), handleTxt);
+
+function refresh() {
+  const ready = !!(state.wav && state.labels);
+  $('#go').disabled = !ready;
+  $('#preview').hidden = !ready;
+  if (ready) render();
+}
+
+function render() {
+  const dur = state.wav.duration;
+  const track = $('#track'), list = $('#list');
+  track.replaceChildren();
+  list.replaceChildren();
+
+  const inRange = state.labels.filter(l => l.start <= dur);
+  inRange.forEach(l => {
+    const mark = document.createElement('div');
+    mark.className = 'mark';
+    mark.style.left = (dur ? (l.start / dur) * 100 : 0) + '%';
+    mark.title = fmt(l.start) + '  ' + l.text;
+    track.append(mark);
+
+    const li = document.createElement('li');
+    const time = document.createElement('time');
+    time.textContent = fmt(l.start);
+    const text = document.createElement('span');
+    text.textContent = l.text || '(no text)';
+    li.append(time, text);
+    li.addEventListener('mouseenter', () => mark.classList.add('on'));
+    li.addEventListener('mouseleave', () => mark.classList.remove('on'));
+    list.append(li);
+  });
+  $('#endTime').textContent = fmt(dur, true);
+
+  const notes = [];
+  const skipped = state.labels.length - inRange.length;
+  if (skipped) notes.push(`${skipped} ${skipped === 1 ? 'label is' : 'labels are'} past the end of the audio and will be left out.`);
+  if (inRange.some(l => l.end > l.start)) notes.push('Labels that cover a range become a single marker at their start time.');
+  $('#notes').textContent = notes.join(' ');
+}
+
+$('#go').addEventListener('click', () => {
+  try {
+    const { blob, count } = buildWav(state.wav, state.labels);
+    const name = state.wav.file.name.replace(/\.wav$/i, '') + '_marked.wav';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    setStatus(`Downloaded ${name} with ${count} ${count === 1 ? 'marker' : 'markers'}.`);
+  } catch (e) {
+    setStatus(e.message, true);
+  }
+});
+</script>
+</body>
+</html>
